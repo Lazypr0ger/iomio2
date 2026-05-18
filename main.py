@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from src.app import run_variant_3
+from src.app import run_menu
 
 
 def main() -> None:
-    run_variant_3()
+    run_menu()
 
 
 if __name__ == "__main__":
