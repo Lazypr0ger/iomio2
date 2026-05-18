@@ -29,8 +29,8 @@ def _get_plot_bounds(
         track = _get_track(result)
         points.extend(track)
 
-    if function.known_minimum is not None:
-        points.append(function.known_minimum)
+    for known_minimum in function.known_minima:
+        points.append(known_minimum)
 
     points_array = np.array(points, dtype=float)
 
@@ -141,14 +141,24 @@ def plot_contour_with_tracks(
         label="Начальная точка",
     )
 
-    if function.known_minimum is not None:
+    for index, known_minimum in enumerate(function.known_minima, start=1):
+        label = "Точный минимум" if index == 1 else None
+
         plt.scatter(
-            function.known_minimum[0],
-            function.known_minimum[1],
+            known_minimum[0],
+            known_minimum[1],
             marker="*",
             s=150,
-            label="Точный минимум",
+            label=label,
         )
+
+        if len(function.known_minima) > 1:
+            plt.text(
+                known_minimum[0],
+                known_minimum[1],
+                f" m{index}",
+                fontsize=8,
+            )
 
     plt.title(f"{function.name}: линии уровня и траектории методов")
     plt.xlabel("x₁")

@@ -7,7 +7,12 @@ import numpy as np
 from src.config import ensure_output_dirs
 from src.functions.base import ObjectiveFunction
 from src.functions.builtin_2d import get_all_builtin_functions, get_variant_3_functions
-from src.functions.polynomial_10d import get_variant_3_polynomial
+from src.functions.polynomial_10d import (
+    CrossTerm,
+    HighPowerTerm,
+    Polynomial10DFunction,
+    get_variant_3_polynomial,
+)
 from src.methods.bfgs import bfgs
 from src.methods.conjugate_gradient import conjugate_gradient_fletcher_reeves
 from src.methods.newton import modified_newton
@@ -199,6 +204,201 @@ def read_vector(prompt: str, default: np.ndarray) -> np.ndarray:
     return vector
 
 
+def read_vector_by_size(
+    prompt: str,
+    size: int,
+    default: np.ndarray | None = None,
+) -> np.ndarray:
+    """Ввод вектора фиксированного размера."""
+
+    if default is None:
+        default = np.zeros(size, dtype=float)
+
+    while True:
+        try:
+            return read_vector(prompt, default)
+        except ValueError as error:
+            print(f"Ошибка: {error}")
+
+
+def parse_cross_terms(raw_value: str) -> list[CrossTerm]:
+    """
+    Разбор перекрёстных членов.
+
+    Формат:
+        i j coefficient; i j coefficient
+
+    Индексы вводятся с 1.
+    Пример:
+        1 2 -1.3; 2 3 0.8; 4 5 -1.1
+    """
+
+    if not raw_value.strip():
+        return []
+
+    cross_terms: list[CrossTerm] = []
+
+    for raw_term in raw_value.split(";"):
+        raw_term = raw_term.strip()
+
+        if not raw_term:
+            continue
+
+        parts = raw_term.replace(",", " ").split()
+
+        if len(parts) != 3:
+            raise ValueError(
+                "Каждый перекрёстный член должен иметь формат: i j coefficient."
+            )
+
+        i = int(parts[0]) - 1
+        j = int(parts[1]) - 1
+        coefficient = float(parts[2])
+
+        if not 0 <= i < 10 or not 0 <= j < 10:
+            raise ValueError("Индексы перекрёстных членов должны быть от 1 до 10.")
+
+        if i == j:
+            raise ValueError("Индексы i и j должны отличаться.")
+
+        cross_terms.append(
+            CrossTerm(
+                i=i,
+                j=j,
+                coefficient=coefficient,
+            )
+        )
+
+    return cross_terms
+
+
+def read_cross_terms(default_value: str) -> list[CrossTerm]:
+    """Ввод перекрёстных членов полинома."""
+
+    while True:
+        print("Формат перекрёстных членов: i j coefficient; i j coefficient")
+        print("Пример: 1 2 -1.3; 2 3 0.8; 4 5 -1.1")
+        raw_value = input(f"Перекрёстные члены [{default_value}]: ").strip()
+
+        if not raw_value:
+            raw_value = default_value
+
+        try:
+            return parse_cross_terms(raw_value)
+        except ValueError as error:
+            print(f"Ошибка: {error}")
+
+
+def create_custom_polynomial_from_console() -> Polynomial10DFunction:
+    """Создание произвольного полинома 10D через консоль."""
+
+    print("=" * 80)
+    print("Создание произвольного полинома 10D")
+    print("Формат:")
+    print("f(x) = Σ d_i*x_i^2 + Σ c_ij*x_i*x_j + Σ l_i*x_i + alpha*x_k^p")
+    print("Индексы переменных вводятся с 1: x1, x2, ..., x10.")
+    print("Нажмите Enter, чтобы использовать значения по умолчанию.")
+
+    default_diagonal = np.array(
+        [
+            9.8,
+            5.1,
+            7.5,
+            4.2,
+            6.4,
+            3.8,
+            8.1,
+            2.9,
+            5.7,
+            4.6,
+        ],
+        dtype=float,
+    )
+
+    default_linear = np.array(
+        [
+            1.2,
+            -2.0,
+            0.7,
+            0.0,
+            -1.5,
+            2.1,
+            0.0,
+            -0.8,
+            1.4,
+            0.0,
+        ],
+        dtype=float,
+    )
+
+    default_x0 = np.array(
+        [
+            -1.5,
+            -2.4,
+            2.5,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ],
+        dtype=float,
+    )
+
+    default_cross_terms_text = (
+        "1 2 -1.3; 2 3 0.8; 4 5 -1.1; 6 8 1.4; 9 10 -0.9"
+    )
+
+    diagonal = read_vector_by_size(
+        prompt="Диагональные коэффициенты d_i, 10 чисел",
+        size=10,
+        default=default_diagonal,
+    )
+
+    cross_terms = read_cross_terms(default_cross_terms_text)
+
+    linear = read_vector_by_size(
+        prompt="Линейные коэффициенты l_i, 10 чисел",
+        size=10,
+        default=default_linear,
+    )
+
+    high_power_index = read_int("Индекс высокостепенного члена k, от 1 до 10", 3)
+
+    if not 1 <= high_power_index <= 10:
+        raise ValueError("Индекс k должен быть от 1 до 10.")
+
+    high_power_coefficient = read_float("Коэффициент alpha", 0.043)
+    high_power_power = read_int("Степень p", 6)
+
+    if high_power_power < 2:
+        raise ValueError("Степень p должна быть не меньше 2.")
+
+    if high_power_power > 10:
+        raise ValueError("По условию степень не должна превышать 10.")
+
+    default_x0 = read_vector_by_size(
+        prompt="Начальная точка x0, 10 чисел",
+        size=10,
+        default=default_x0,
+    )
+
+    return Polynomial10DFunction(
+        name="CustomPolynomial10D",
+        diagonal=diagonal,
+        cross_terms=cross_terms,
+        linear=linear,
+        high_power_term=HighPowerTerm(
+            index=high_power_index - 1,
+            coefficient=high_power_coefficient,
+            power=high_power_power,
+        ),
+        default_x0=default_x0,
+    )
+
+
 def configure_params(default_params: OptimizationParams) -> OptimizationParams:
     """Изменение гиперпараметров перед запуском."""
 
@@ -243,7 +443,13 @@ def choose_function(functions: list[ObjectiveFunction]) -> ObjectiveFunction:
     for index, function in enumerate(functions, start=1):
         print(f"{index}. {function.name}, x0 = {function.default_x0}")
 
+    custom_polynomial_index = len(functions) + 1
+    print(f"{custom_polynomial_index}. CustomPolynomial10D, ввод вручную")
+
     selected_index = read_int("Номер функции", 1)
+
+    if selected_index == custom_polynomial_index:
+        return create_custom_polynomial_from_console()
 
     if selected_index < 1 or selected_index > len(functions):
         raise ValueError("Некорректный номер функции.")
@@ -259,8 +465,9 @@ def run_interactive_single_function() -> list[OptimizationResult]:
     functions = get_functions_for_menu()
     function = choose_function(functions)
 
-    x0 = read_vector("Начальная точка x0", function.default_x0)
-    function.default_x0 = x0
+    if function.name != "CustomPolynomial10D":
+        x0 = read_vector("Начальная точка x0", function.default_x0)
+        function.default_x0 = x0
 
     params = configure_params(get_default_params())
 
@@ -319,12 +526,15 @@ def run_menu() -> None:
 
         choice = input("Выберите пункт: ").strip()
 
-        if choice == "1":
-            run_variant_3()
-        elif choice == "2":
-            run_interactive_single_function()
-        elif choice == "0":
-            print("Завершение работы.")
-            break
-        else:
-            print("Некорректный пункт меню.")
+        try:
+            if choice == "1":
+                run_variant_3()
+            elif choice == "2":
+                run_interactive_single_function()
+            elif choice == "0":
+                print("Завершение работы.")
+                break
+            else:
+                print("Некорректный пункт меню.")
+        except ValueError as error:
+            print(f"Ошибка ввода: {error}")

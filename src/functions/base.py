@@ -17,13 +17,26 @@ class ObjectiveFunction(ABC):
         default_x0: np.ndarray,
         known_minimum: np.ndarray | None = None,
         known_minimum_value: float | None = None,
+        known_minima: list[np.ndarray] | None = None,
     ) -> None:
         self.name = name
         self.dimension = dimension
         self.default_x0 = np.array(default_x0, dtype=float)
+
         self.known_minimum = (
             None if known_minimum is None else np.array(known_minimum, dtype=float)
         )
+
+        if known_minima is not None:
+            self.known_minima = [
+                np.array(point, dtype=float)
+                for point in known_minima
+            ]
+        elif self.known_minimum is not None:
+            self.known_minima = [self.known_minimum]
+        else:
+            self.known_minima = []
+
         self.known_minimum_value = known_minimum_value
         self.counter = FunctionEvaluationCounter()
 

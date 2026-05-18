@@ -15,6 +15,12 @@ class HimmelblauFunction(ObjectiveFunction):
             default_x0=np.array([0.0, 0.0]) if default_x0 is None else default_x0,
             known_minimum=np.array([3.0, 2.0]),
             known_minimum_value=0.0,
+            known_minima=[
+                np.array([3.0, 2.0]),
+                np.array([-2.805118, 3.131312]),
+                np.array([-3.779310, -3.283186]),
+                np.array([3.584428, -1.848126]),
+            ],
         )
 
     def _value(self, x: np.ndarray) -> float:
