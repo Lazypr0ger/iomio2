@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -29,14 +30,85 @@ from src.visualization.convergence import (
 from src.visualization.polynomial_sections import plot_polynomial_2d_section
 
 
-def get_methods():
+OptimizationMethod = Callable[
+    [ObjectiveFunction, np.ndarray, OptimizationParams],
+    OptimizationResult,
+]
+
+
+METHOD_DISPLAY_NAMES = {
+    "CG Fletcher-Reeves": "Сопряжённые градиенты Флетчера–Ривза",
+    "Modified Newton": "Модифицированный метод Ньютона",
+    "BFGS": "BFGS",
+}
+
+
+FUNCTION_DISPLAY_NAMES = {
+    "Himmelblau": "Химмельблау",
+    "Rosenbrock": "Розенброк",
+    "Booth": "Бут",
+    "Beale": "Бил",
+    "Matyas": "Матьяс",
+    "ThreeHumpCamel": "Трёхгорбый верблюд",
+    "Sphere": "Сфера",
+    "Rastrigin": "Растригин",
+    "Polynomial10DVariant3": "Полином 10D, вариант 3",
+    "CustomPolynomial10D": "Произвольный полином 10D",
+}
+
+
+SUMMARY_COLUMN_NAMES = {
+    "function": "Функция",
+    "method": "Метод",
+    "converged": "Сошёлся",
+    "iterations": "Итерации",
+    "function_evaluations": "Вычисления f",
+    "gradient_evaluations": "Вычисления ∇f",
+    "hessian_evaluations": "Вычисления Гессиана",
+    "x_star": "x*",
+    "f_star": "f(x*)",
+    "grad_norm": "||∇f(x*)||",
+    "message": "Сообщение",
+}
+
+
+HISTORY_COLUMN_NAMES = {
+    "k": "k",
+    "f_value": "f(xᵏ)",
+    "grad_norm": "||∇f(xᵏ)||",
+    "step_size": "λᵏ",
+    "x1": "x₁ᵏ",
+    "x2": "x₂ᵏ",
+    "x": "xᵏ",
+    "step_norm": "||xᵏ - xᵏ⁻¹||",
+    "beta": "βᵏ",
+    "restart": "Рестарт",
+    "regularization": "Регуляризация",
+    "rho": "ρ",
+    "update": "Обновление",
+}
+
+
+def get_method_display_name(method_name: str) -> str:
+    """Русское название метода для интерфейса."""
+
+    return METHOD_DISPLAY_NAMES.get(method_name, method_name)
+
+
+def get_function_display_name(function_name: str) -> str:
+    """Русское название функции для интерфейса."""
+
+    return FUNCTION_DISPLAY_NAMES.get(function_name, function_name)
+
+
+def get_methods() -> dict[str, OptimizationMethod]:
     """Три обязательных метода лабораторной работы."""
 
-    return [
-        conjugate_gradient_fletcher_reeves,
-        modified_newton,
-        bfgs,
-    ]
+    return {
+        "Сопряжённые градиенты Флетчера–Ривза": conjugate_gradient_fletcher_reeves,
+        "Модифицированный метод Ньютона": modified_newton,
+        "BFGS": bfgs,
+    }
 
 
 def get_default_params() -> OptimizationParams:
@@ -57,12 +129,15 @@ def get_default_params() -> OptimizationParams:
 def run_methods(
     function: ObjectiveFunction,
     params: OptimizationParams,
+    selected_method_names: list[str],
 ) -> list[OptimizationResult]:
-    """Запуск всех обязательных методов для одной функции."""
+    """Запуск выбранных методов для одной функции."""
 
+    methods = get_methods()
     results: list[OptimizationResult] = []
 
-    for method in get_methods():
+    for method_name in selected_method_names:
+        method = methods[method_name]
         result = method(function, function.default_x0, params)
         results.append(result)
 
@@ -74,6 +149,7 @@ def get_function_catalog() -> dict[str, ObjectiveFunction]:
 
     functions = get_all_builtin_functions()
     functions["Polynomial10DVariant3"] = get_variant_3_polynomial()
+
     return functions
 
 
@@ -114,7 +190,7 @@ def parse_cross_terms(raw_value: str) -> list[CrossTerm]:
     Формат:
         i j coefficient; i j coefficient
 
-    Индексы вводятся с 1, как в математической записи.
+    Индексы вводятся с 1.
 
     Пример:
         1 2 -1.3; 2 3 0.8; 4 5 -1.1
@@ -320,11 +396,11 @@ def display_downloads(
 def display_result_cards(results: list[OptimizationResult]) -> None:
     """Карточки результатов по методам."""
 
-    columns = st.columns(3)
+    columns = st.columns(len(results))
 
     for column, result in zip(columns, results):
         with column:
-            st.subheader(result.method_name)
+            st.subheader(get_method_display_name(result.method_name))
             st.metric("Итерации", result.iterations)
             st.metric("f(x*)", f"{result.f_star:.6g}")
             st.metric("||∇f(x*)||", f"{result.grad_norm:.6g}")
@@ -337,16 +413,33 @@ def display_result_cards(results: list[OptimizationResult]) -> None:
             st.caption(result.message)
 
 
+def display_summary_table(results: list[OptimizationResult]) -> None:
+    """Сводная таблица с русскими названиями колонок и методов."""
+
+    dataframe = results_to_summary_dataframe(results)
+
+    if "method" in dataframe.columns:
+        dataframe["method"] = dataframe["method"].map(get_method_display_name)
+
+    if "function" in dataframe.columns:
+        dataframe["function"] = dataframe["function"].map(get_function_display_name)
+
+    dataframe = dataframe.rename(columns=SUMMARY_COLUMN_NAMES)
+
+    st.dataframe(dataframe, use_container_width=True)
+
+
 def display_iteration_tables(results: list[OptimizationResult]) -> None:
     """Таблицы итераций."""
 
     st.header("Таблицы итераций")
 
-    tabs = st.tabs([result.method_name for result in results])
+    tabs = st.tabs([get_method_display_name(result.method_name) for result in results])
 
     for tab, result in zip(tabs, results):
         with tab:
             dataframe = result_history_to_dataframe(result)
+            dataframe = dataframe.rename(columns=HISTORY_COLUMN_NAMES)
             st.dataframe(dataframe, use_container_width=True)
 
 
@@ -408,14 +501,14 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
     st.sidebar.header("Гиперпараметры")
 
     epsilon = st.sidebar.number_input(
-        "epsilon",
+        "Точность ε",
         min_value=1e-12,
         value=default_params.epsilon,
         format="%.12f",
     )
 
     max_iterations = st.sidebar.number_input(
-        "max_iterations",
+        "Максимальное число итераций",
         min_value=1,
         max_value=10000,
         value=default_params.max_iterations,
@@ -423,14 +516,14 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
     )
 
     initial_step = st.sidebar.number_input(
-        "initial_step",
+        "Начальный шаг λ₀",
         min_value=1e-12,
         value=default_params.initial_step,
         format="%.6f",
     )
 
     armijo_c1 = st.sidebar.number_input(
-        "armijo_c1",
+        "Параметр Армихо c₁",
         min_value=1e-12,
         max_value=0.5,
         value=default_params.armijo_c1,
@@ -438,7 +531,7 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
     )
 
     backtracking_factor = st.sidebar.number_input(
-        "backtracking_factor",
+        "Коэффициент уменьшения шага",
         min_value=0.01,
         max_value=0.99,
         value=default_params.backtracking_factor,
@@ -446,17 +539,20 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
     )
 
     min_step = st.sidebar.number_input(
-        "min_step",
+        "Минимальный шаг",
         min_value=1e-16,
         value=default_params.min_step,
         format="%.16f",
     )
 
-    use_restart = st.sidebar.checkbox("Задать частоту рестарта CG вручную", value=False)
+    use_restart = st.sidebar.checkbox(
+        "Задать частоту рестарта сопряжённых градиентов вручную",
+        value=False,
+    )
 
     if use_restart:
         cg_restart_frequency_value = st.sidebar.number_input(
-            "cg_restart_frequency",
+            "Частота рестарта",
             min_value=1,
             max_value=1000,
             value=2,
@@ -467,7 +563,7 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
         cg_restart_frequency = None
 
     newton_regularization = st.sidebar.number_input(
-        "newton_regularization",
+        "Регуляризация Ньютона μ",
         min_value=0.0,
         value=default_params.newton_regularization,
         format="%.12f",
@@ -485,17 +581,48 @@ def sidebar_params(default_params: OptimizationParams) -> OptimizationParams:
     )
 
 
-def render_single_function_mode(params: OptimizationParams) -> None:
+def sidebar_method_selection() -> list[str]:
+    """Выбор методов в боковой панели."""
+
+    st.sidebar.header("Методы оптимизации")
+
+    method_names = list(get_methods().keys())
+
+    selected_method_names = st.sidebar.multiselect(
+        "Выберите методы",
+        options=method_names,
+        default=method_names,
+    )
+
+    if not selected_method_names:
+        st.sidebar.warning("Выберите хотя бы один метод.")
+
+    return selected_method_names
+
+
+def render_single_function_mode(
+    params: OptimizationParams,
+    selected_method_names: list[str],
+) -> None:
     """Режим запуска одной функции."""
 
     function_catalog = get_function_catalog()
     function_names = [*list(function_catalog.keys()), "CustomPolynomial10D"]
 
-    selected_name = st.selectbox(
+    function_display_to_internal = {
+        get_function_display_name(name): name
+        for name in function_names
+    }
+
+    display_function_names = list(function_display_to_internal.keys())
+
+    selected_display_name = st.selectbox(
         "Функция",
-        function_names,
-        index=function_names.index("Booth"),
+        display_function_names,
+        index=display_function_names.index("Бут"),
     )
+
+    selected_name = function_display_to_internal[selected_display_name]
 
     if selected_name == "CustomPolynomial10D":
         function = build_custom_polynomial_from_ui()
@@ -519,24 +646,30 @@ def render_single_function_mode(params: OptimizationParams) -> None:
             st.error(str(error))
             return
 
-    st.info(f"Выбрана функция: {function.name}. x0 = {function.default_x0}")
+    st.info(
+        f"Выбрана функция: {get_function_display_name(function.name)}. "
+        f"x0 = {function.default_x0}"
+    )
 
     if st.button("Запустить оптимизацию", type="primary"):
         with st.spinner("Выполняется оптимизация..."):
-            results = run_methods(function, params)
+            results = run_methods(function, params, selected_method_names)
 
         st.header("Результаты")
         display_result_cards(results)
 
         st.subheader("Сводная таблица")
-        st.dataframe(results_to_summary_dataframe(results), use_container_width=True)
+        display_summary_table(results)
 
         graph_paths = display_graphs(function, results, params)
         display_iteration_tables(results)
         display_downloads(results, graph_paths, prefix=function.name)
 
 
-def render_variant_3_mode(params: OptimizationParams) -> None:
+def render_variant_3_mode(
+    params: OptimizationParams,
+    selected_method_names: list[str],
+) -> None:
     """Режим полного запуска варианта 3."""
 
     variant_functions = [
@@ -548,11 +681,11 @@ def render_variant_3_mode(params: OptimizationParams) -> None:
         """
         Вариант 3 включает:
 
-        - Booth, x0 = (-5, -5)
-        - Sphere, x0 = (-3, -3)
-        - Rosenbrock, x0 = (-2, 2)
-        - Himmelblau, x0 = (-1, 0)
-        - Polynomial10DVariant3
+        - Бут, x0 = (-5, -5)
+        - Сфера, x0 = (-3, -3)
+        - Розенброк, x0 = (-2, 2)
+        - Химмельблау, x0 = (-1, 0)
+        - Полином 10D, вариант 3
         """
     )
 
@@ -562,13 +695,16 @@ def render_variant_3_mode(params: OptimizationParams) -> None:
 
         with st.spinner("Выполняются расчёты для варианта 3..."):
             for function in variant_functions:
-                all_results.extend(run_methods(function, params))
+                all_results.extend(
+                    run_methods(
+                        function=function,
+                        params=params,
+                        selected_method_names=selected_method_names,
+                    )
+                )
 
         st.header("Сводная таблица по варианту 3")
-        st.dataframe(
-            results_to_summary_dataframe(all_results),
-            use_container_width=True,
-        )
+        display_summary_table(all_results)
 
         for function in variant_functions:
             function_results = [
@@ -578,7 +714,7 @@ def render_variant_3_mode(params: OptimizationParams) -> None:
             ]
 
             st.divider()
-            st.header(function.name)
+            st.header(get_function_display_name(function.name))
             st.write(f"Начальная точка: `{function.default_x0}`")
 
             display_result_cards(function_results)
@@ -586,7 +722,9 @@ def render_variant_3_mode(params: OptimizationParams) -> None:
             graph_paths = display_graphs(function, function_results, params)
             all_graph_paths.extend(graph_paths)
 
-            with st.expander(f"Таблицы итераций: {function.name}"):
+            with st.expander(
+                f"Таблицы итераций: {get_function_display_name(function.name)}"
+            ):
                 display_iteration_tables(function_results)
 
         display_downloads(
@@ -623,6 +761,11 @@ def main() -> None:
     )
 
     params = sidebar_params(get_default_params())
+    selected_method_names = sidebar_method_selection()
+
+    if not selected_method_names:
+        st.warning("Выберите хотя бы один метод в боковой панели.")
+        return
 
     mode = st.radio(
         "Режим запуска",
@@ -634,9 +777,9 @@ def main() -> None:
     )
 
     if mode == "Одна функция":
-        render_single_function_mode(params)
+        render_single_function_mode(params, selected_method_names)
     else:
-        render_variant_3_mode(params)
+        render_variant_3_mode(params, selected_method_names)
 
 
 if __name__ == "__main__":
