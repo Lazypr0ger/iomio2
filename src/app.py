@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import numpy as np
-
+from src.reporting.docx_report import generate_docx_report
 from src.config import ensure_output_dirs
 from src.functions.base import ObjectiveFunction
 from src.functions.builtin_2d import get_all_builtin_functions, get_variant_3_functions
@@ -141,6 +141,16 @@ def run_variant_3() -> list[OptimizationResult]:
         print(path)
 
     export_all_tables(all_results)
+    
+    report_path = generate_docx_report(
+        functions=functions,
+        results=all_results,
+        epsilon=params.epsilon,
+    )
+
+    print("=" * 80)
+    print("DOCX-отчёт сформирован")
+    print(report_path)
 
     return all_results
 
@@ -510,7 +520,15 @@ def run_interactive_single_function() -> list[OptimizationResult]:
             print(path)
 
     export_all_tables(results)
+    report_path = generate_docx_report(
+        functions=[function],
+        results=results,
+        epsilon=params.epsilon,
+    )
 
+    print("=" * 80)
+    print("DOCX-отчёт сформирован")
+    print(report_path)
     return results
 
 

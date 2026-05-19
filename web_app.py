@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 from zipfile import ZipFile
-
+from src.reporting.docx_report import generate_docx_report
 import numpy as np
 import streamlit as st
 
@@ -392,6 +392,28 @@ def display_downloads(
             mime="application/zip",
         )
 
+def display_docx_report_download(
+    functions: list[ObjectiveFunction],
+    results: list[OptimizationResult],
+    epsilon: float,
+    prefix: str,
+) -> None:
+    """Создание и скачивание DOCX-отчёта."""
+
+    report_path = generate_docx_report(
+        functions=functions,
+        results=results,
+        epsilon=epsilon,
+    )
+
+    with report_path.open("rb") as file:
+        st.download_button(
+            label="Скачать DOCX-отчёт",
+            data=file,
+            file_name=f"{prefix}_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
 
 def display_result_cards(results: list[OptimizationResult]) -> None:
     """Карточки результатов по методам."""
@@ -664,6 +686,12 @@ def render_single_function_mode(
         graph_paths = display_graphs(function, results, params)
         display_iteration_tables(results)
         display_downloads(results, graph_paths, prefix=function.name)
+        display_docx_report_download(
+            functions=[function],
+            results=results,
+            epsilon=params.epsilon,
+            prefix=function.name,
+        )
 
 
 def render_variant_3_mode(
@@ -730,6 +758,12 @@ def render_variant_3_mode(
         display_downloads(
             results=all_results,
             graph_paths=all_graph_paths,
+            prefix="variant_3",
+        )
+        display_docx_report_download(
+            functions=variant_functions,
+            results=all_results,
+            epsilon=params.epsilon,
             prefix="variant_3",
         )
 
