@@ -38,6 +38,13 @@ FUNCTION_RU_NAMES = {
 
 
 METHOD_RU_NAMES = {
+    "CG Fletcher-Reeves": "CG (Фл.-Ривз)",
+    "Modified Newton": "Ньютон (мод.)",
+    "BFGS": "BFGS",
+}
+
+
+METHOD_FULL_RU_NAMES = {
     "CG Fletcher-Reeves": "Сопряжённые градиенты Флетчера–Ривза",
     "Modified Newton": "Модифицированный метод Ньютона",
     "BFGS": "BFGS",
@@ -48,43 +55,38 @@ SUMMARY_COLUMNS_RU = {
     "function": "Функция",
     "method": "Метод",
     "converged": "Сошёлся",
-    "iterations": "Итерации",
-    "function_evaluations": "Вычисления f",
-    "gradient_evaluations": "Вычисления ∇f",
-    "hessian_evaluations": "Вычисления H",
+    "iterations": "Итер.",
+    "function_evaluations": "Выч. f",
+    "gradient_evaluations": "Выч. ∇f",
+    "hessian_evaluations": "Выч. H",
     "x_star": "x*",
     "f_star": "f(x*)",
-    "grad_norm": "||∇f(x*)||",
-    "message": "Сообщение",
-}
-
-
-HISTORY_COLUMNS_RU = {
-    "k": "k",
-    "f_value": "f(xᵏ)",
-    "grad_norm": "||∇f(xᵏ)||",
-    "step_size": "λᵏ",
-    "x1": "x₁ᵏ",
-    "x2": "x₂ᵏ",
-    "x": "xᵏ",
-    "step_norm": "||xᵏ - xᵏ⁻¹||",
-    "beta": "βᵏ",
-    "restart": "Рестарт",
-    "regularization": "Регуляризация",
-    "rho": "ρ",
-    "update": "Обновление",
+    "grad_norm": "||∇f||",
+    "distance_to_known_minimum": "||x* − x*_т||",
 }
 
 
 def get_function_ru_name(name: str) -> str:
+    """Русское название функции."""
+
     return FUNCTION_RU_NAMES.get(name, name)
 
 
 def get_method_ru_name(name: str) -> str:
+    """Краткое русское название метода для таблиц по шаблону."""
+
     return METHOD_RU_NAMES.get(name, name)
 
 
+def get_method_full_ru_name(name: str) -> str:
+    """Полное русское название метода."""
+
+    return METHOD_FULL_RU_NAMES.get(name, name)
+
+
 def format_array(array: np.ndarray, precision: int = 6) -> str:
+    """Форматирование вектора."""
+
     return np.array2string(
         array,
         precision=precision,
@@ -94,6 +96,8 @@ def format_array(array: np.ndarray, precision: int = 6) -> str:
 
 
 def format_value(value: object) -> str:
+    """Форматирование значения для ячейки таблицы."""
+
     if value is None:
         return "—"
 
@@ -101,10 +105,17 @@ def format_value(value: object) -> str:
         return "Да" if value else "Нет"
 
     if isinstance(value, float):
-        return f"{value:.6g}"
+        if abs(value) < 1e-4 and value != 0:
+            return f"{value:.3e}"
+        return f"{value:.6f}".rstrip("0").rstrip(".")
 
     if isinstance(value, np.floating):
-        return f"{float(value):.6g}"
+        float_value = float(value)
+
+        if abs(float_value) < 1e-4 and float_value != 0:
+            return f"{float_value:.3e}"
+
+        return f"{float_value:.6f}".rstrip("0").rstrip(".")
 
     if isinstance(value, np.integer):
         return str(int(value))
@@ -112,17 +123,65 @@ def format_value(value: object) -> str:
     return str(value)
 
 
+def format_extra_info(extra: dict[str, object]) -> str:
+    """Форматирование дополнительной информации итерации."""
+
+    if not extra:
+        return "—"
+
+    if "beta" in extra and extra["beta"] is not None:
+        return f"β={format_value(extra['beta'])}"
+
+    if "regularization" in extra and extra["regularization"] is not None:
+        return f"reg={format_value(extra['regularization'])}"
+
+    if "rho" in extra and extra["rho"] is not None:
+        return f"ρ={format_value(extra['rho'])}"
+
+    if "update" in extra and extra["update"] is not None:
+        return str(extra["update"])
+
+    return "—"
+
+
+def get_distance_to_known_minimum(
+    function: ObjectiveFunction,
+    result: OptimizationResult,
+) -> float | None:
+    """
+    Расстояние до ближайшего точного минимума.
+
+    Для полинома точный минимум неизвестен, поэтому возвращается None.
+    """
+
+    if not function.known_minima:
+        return None
+
+    distances = [
+        float(np.linalg.norm(result.x_star - known_minimum))
+        for known_minimum in function.known_minima
+    ]
+
+    return min(distances)
+
+
 def add_heading(document: Document, text: str, level: int = 1) -> None:
+    """Добавление заголовка."""
+
     document.add_heading(text, level=level)
 
 
 def add_paragraph(document: Document, text: str = "") -> None:
+    """Добавление обычного абзаца."""
+
     paragraph = document.add_paragraph(text)
     paragraph_format = paragraph.paragraph_format
     paragraph_format.space_after = Pt(6)
 
 
 def add_centered_title(document: Document, text: str) -> None:
+    """Добавление центрированного заголовка."""
+
     paragraph = document.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -131,11 +190,24 @@ def add_centered_title(document: Document, text: str) -> None:
     run.font.size = Pt(16)
 
 
+def set_table_font_size(table, font_size: int = 9) -> None:
+    """Установка размера шрифта в таблице."""
+
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(font_size)
+
+
 def add_dataframe_table(
     document: Document,
     dataframe: pd.DataFrame,
     max_rows: int | None = None,
+    font_size: int = 9,
 ) -> None:
+    """Добавление DataFrame как таблицы Word."""
+
     if dataframe.empty:
         add_paragraph(document, "Нет данных для таблицы.")
         return
@@ -171,12 +243,16 @@ def add_dataframe_table(
         for index, value in enumerate(row):
             cells[index].text = format_value(value)
 
+    set_table_font_size(table, font_size=font_size)
+
 
 def add_image_if_exists(
     document: Document,
     image_path: Path,
     width_inches: float = 6.5,
 ) -> None:
+    """Добавление изображения в отчёт."""
+
     if not image_path.exists():
         add_paragraph(document, f"График не найден: {image_path}")
         return
@@ -188,95 +264,108 @@ def add_image_if_exists(
     run.add_picture(str(image_path), width=Inches(width_inches))
 
 
-def prepare_summary_dataframe(results: list[OptimizationResult]) -> pd.DataFrame:
-    dataframe = results_to_summary_dataframe(results)
-
-    if "function" in dataframe.columns:
-        dataframe["function"] = dataframe["function"].map(get_function_ru_name)
-
-    if "method" in dataframe.columns:
-        dataframe["method"] = dataframe["method"].map(get_method_ru_name)
-
-    columns_to_keep = [
-        "function",
-        "method",
-        "converged",
-        "iterations",
-        "function_evaluations",
-        "gradient_evaluations",
-        "hessian_evaluations",
-        "x_star",
-        "f_star",
-        "grad_norm",
-    ]
-
-    dataframe = dataframe[columns_to_keep]
-    dataframe = dataframe.rename(columns=SUMMARY_COLUMNS_RU)
-
-    return dataframe
-
-
-def prepare_function_summary_dataframe(
+def prepare_2d_result_template_dataframe(
     results: list[OptimizationResult],
 ) -> pd.DataFrame:
-    dataframe = prepare_summary_dataframe(results)
+    """
+    Таблица результата для 2D-функции в формате шаблона презентации.
 
-    columns_to_keep = [
-        "Метод",
-        "Итерации",
-        "Вычисления f",
-        "Вычисления ∇f",
-        "Вычисления H",
-        "x*",
-        "f(x*)",
-        "||∇f(x*)||",
-    ]
+    Шаблон:
+        Метод | k | x₁* | x₂* | f(x*) | ||∇f|| | Итер. | Выч. f
+    """
 
-    return dataframe[columns_to_keep]
+    rows: list[dict[str, object]] = []
+
+    for result in results:
+        rows.append(
+            {
+                "Метод": get_method_ru_name(result.method_name),
+                "k": result.iterations,
+                "x₁*": result.x_star[0],
+                "x₂*": result.x_star[1],
+                "f(x*)": result.f_star,
+                "||∇f||": result.grad_norm,
+                "Итер.": result.iterations,
+                "Выч. f": result.function_evaluations,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def prepare_polynomial_result_template_dataframe(
+    results: list[OptimizationResult],
+) -> pd.DataFrame:
+    """
+    Таблица результата для полинома 10D в формате шаблона презентации.
+
+    Шаблон:
+        Метод | k | f(x*) | ||∇f(x*)|| | Итерации | Выч. f | Выч. ∇f
+    """
+
+    rows: list[dict[str, object]] = []
+
+    for result in results:
+        rows.append(
+            {
+                "Метод": get_method_ru_name(result.method_name),
+                "k": result.iterations,
+                "f(x*)": result.f_star,
+                "||∇f(x*)||": result.grad_norm,
+                "Итерации": result.iterations,
+                "Выч. f": result.function_evaluations,
+                "Выч. ∇f": result.gradient_evaluations,
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 
 def prepare_history_dataframe(
     result: OptimizationResult,
     max_rows: int = 12,
 ) -> pd.DataFrame:
-    dataframe = result_history_to_dataframe(result)
+    """
+    Таблица итераций в формате шаблонов презентации.
 
-    if result.x_star.size == 2:
-        columns_to_keep = [
-            column
-            for column in [
-                "k",
-                "x1",
-                "x2",
-                "f_value",
-                "grad_norm",
-                "step_size",
-                "beta",
-                "regularization",
-                "rho",
-                "update",
-            ]
-            if column in dataframe.columns
-        ]
-    else:
-        columns_to_keep = [
-            column
-            for column in [
-                "k",
-                "f_value",
-                "grad_norm",
-                "step_size",
-                "step_norm",
-                "beta",
-                "regularization",
-                "rho",
-                "update",
-            ]
-            if column in dataframe.columns
-        ]
+    Для 2D:
+        k | x₁ᵏ | x₂ᵏ | f(xᵏ) | ||∇f(xᵏ)|| | λᵏ | βᵏ / доп.
 
-    dataframe = dataframe[columns_to_keep]
-    dataframe = dataframe.rename(columns=HISTORY_COLUMNS_RU)
+    Для 10D:
+        k | f(xᵏ) | ||∇f(xᵏ)|| | λᵏ | ||xᵏ − xᵏ⁻¹||
+    """
+
+    rows: list[dict[str, object]] = []
+
+    for index, record in enumerate(result.history):
+        if result.x_star.size == 2:
+            row: dict[str, object] = {
+                "k": record.k,
+                "x₁ᵏ": record.x[0],
+                "x₂ᵏ": record.x[1],
+                "f(xᵏ)": record.f_value,
+                "||∇f(xᵏ)||": record.grad_norm,
+                "λᵏ": record.step_size,
+                "βᵏ / доп.": format_extra_info(record.extra),
+            }
+        else:
+            if index == 0:
+                step_norm = None
+            else:
+                previous_x = result.history[index - 1].x
+                step_norm = float(np.linalg.norm(record.x - previous_x))
+
+            row = {
+                "k": record.k,
+                "f(xᵏ)": record.f_value,
+                "||∇f(xᵏ)||": record.grad_norm,
+                "λᵏ": record.step_size,
+                "||xᵏ - xᵏ⁻¹||": step_norm,
+            }
+
+        rows.append(row)
+
+    dataframe = pd.DataFrame(rows)
 
     if len(dataframe) > max_rows:
         head = dataframe.head(max_rows // 2)
@@ -294,10 +383,54 @@ def prepare_history_dataframe(
     return dataframe
 
 
+def prepare_global_summary_dataframe(
+    functions: list[ObjectiveFunction],
+    results: list[OptimizationResult],
+) -> pd.DataFrame:
+    """
+    Общая сводная таблица в формате, близком к шаблону.
+
+    Колонки:
+        Функция | Метод | Итер. | Выч. f | Выч. ∇f | x* | f(x*) | ||x* − x*_т||
+    """
+
+    rows: list[dict[str, object]] = []
+
+    function_by_name = {
+        function.name: function
+        for function in functions
+    }
+
+    for result in results:
+        function = function_by_name.get(result.function_name)
+        distance = (
+            get_distance_to_known_minimum(function, result)
+            if function is not None
+            else None
+        )
+
+        rows.append(
+            {
+                "Функция": get_function_ru_name(result.function_name),
+                "Метод": get_method_ru_name(result.method_name),
+                "Итер.": result.iterations,
+                "Выч. f": result.function_evaluations,
+                "Выч. ∇f": result.gradient_evaluations,
+                "x*": format_array(result.x_star),
+                "f(x*)": result.f_star,
+                "||x*−x*_т||": distance,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def get_results_for_function(
     function: ObjectiveFunction,
     results: list[OptimizationResult],
 ) -> list[OptimizationResult]:
+    """Получение результатов для одной функции."""
+
     return [
         result
         for result in results
@@ -306,6 +439,8 @@ def get_results_for_function(
 
 
 def add_title_page(document: Document) -> None:
+    """Титульная часть."""
+
     add_centered_title(document, "Лабораторная работа №2")
     add_centered_title(document, "Многомерная нелинейная оптимизация")
 
@@ -326,7 +461,9 @@ def add_title_page(document: Document) -> None:
 
 
 def add_problem_statement(document: Document, epsilon: float) -> None:
-    add_heading(document, "1. Постановка задачи", level=1)
+    """Постановка задачи."""
+
+    add_heading(document, "Постановка задачи", level=1)
 
     add_paragraph(
         document,
@@ -350,7 +487,9 @@ def add_problem_statement(document: Document, epsilon: float) -> None:
 
 
 def add_variant_description(document: Document) -> None:
-    add_heading(document, "2. Функции варианта 3", level=1)
+    """Описание варианта 3."""
+
+    add_heading(document, "Функции варианта 3", level=1)
 
     dataframe = pd.DataFrame(
         [
@@ -382,13 +521,15 @@ def add_variant_description(document: Document) -> None:
         ]
     )
 
-    add_dataframe_table(document, dataframe)
+    add_dataframe_table(document, dataframe, font_size=10)
 
 
 def add_method_summary(document: Document) -> None:
-    add_heading(document, "3. Краткое описание методов", level=1)
+    """Описание методов."""
 
-    add_heading(document, "3.1. Метод сопряжённых градиентов Флетчера–Ривза", level=2)
+    add_heading(document, "Краткое описание методов", level=1)
+
+    add_heading(document, "Метод сопряжённых градиентов Флетчера–Ривза", level=2)
     add_paragraph(
         document,
         "В методе используется направление p₀ = -g₀, а последующие "
@@ -396,7 +537,7 @@ def add_method_summary(document: Document) -> None:
         "Для варианта Флетчера–Ривза βₖ = ||gₖ||² / ||gₖ₋₁||².",
     )
 
-    add_heading(document, "3.2. Модифицированный метод Ньютона", level=2)
+    add_heading(document, "Модифицированный метод Ньютона", level=2)
     add_paragraph(
         document,
         "На каждой итерации решается система Hₖpₖ = -gₖ. "
@@ -404,7 +545,7 @@ def add_method_summary(document: Document) -> None:
         "используется регуляризация Hₖ + μI.",
     )
 
-    add_heading(document, "3.3. Метод BFGS", level=2)
+    add_heading(document, "Метод BFGS", level=2)
     add_paragraph(
         document,
         "BFGS является квазиньютоновским методом. В реализации хранится "
@@ -419,13 +560,15 @@ def add_2d_function_section(
     function_results: list[OptimizationResult],
     epsilon: float,
 ) -> None:
+    """Раздел результата для 2D-функции по шаблону презентации."""
+
     function_name = get_function_ru_name(function.name)
 
-    add_heading(document, f"4. Результаты для функции {function_name}", level=1)
+    add_heading(document, f"Результат для 2D-функции: {function_name}", level=1)
 
     add_paragraph(
         document,
-        f"Начальная точка: x⁰ = {format_array(function.default_x0)}.",
+        f"Функция: {function_name}     x⁰ = {format_array(function.default_x0)}",
     )
 
     if function.known_minima:
@@ -433,17 +576,16 @@ def add_2d_function_section(
             format_array(point)
             for point in function.known_minima
         )
-        add_paragraph(document, f"Известные минимумы: {minima_text}.")
+        add_paragraph(document, f"Точные минимумы: {minima_text}.")
 
-    add_heading(document, "4.1. Сводная таблица результатов", level=2)
-    function_summary = prepare_function_summary_dataframe(function_results)
-    add_dataframe_table(document, function_summary)
+    function_summary = prepare_2d_result_template_dataframe(function_results)
+    add_dataframe_table(document, function_summary, font_size=9)
 
-    add_heading(document, "4.2. График линий уровня и траекторий", level=2)
+    add_heading(document, "График: линии уровня + треки трёх методов", level=2)
     contour_path = plot_contour_with_tracks(function, function_results)
     add_image_if_exists(document, contour_path)
 
-    add_heading(document, "4.3. График сходимости", level=2)
+    add_heading(document, "График сходимости", level=2)
     convergence_path = plot_gradient_norm_convergence(
         function=function,
         results=function_results,
@@ -451,26 +593,47 @@ def add_2d_function_section(
     )
     add_image_if_exists(document, convergence_path)
 
-    add_heading(document, "4.4. График убывания значения функции", level=2)
+    add_heading(document, "График убывания значения функции", level=2)
     decrease_path = plot_function_decrease(function, function_results)
     add_image_if_exists(document, decrease_path)
 
-    add_heading(document, "4.5. Таблицы итераций", level=2)
-
-    for result in function_results:
-        add_heading(document, get_method_ru_name(result.method_name), level=3)
-        history_dataframe = prepare_history_dataframe(result)
-        add_dataframe_table(document, history_dataframe)
-
-    add_heading(document, "4.6. Вывод", level=2)
-    best_result = min(function_results, key=lambda item: item.f_star)
+    add_heading(document, "Таблицы итераций методов", level=2)
     add_paragraph(
         document,
-        f"Наименьшее значение функции получено методом "
-        f"{get_method_ru_name(best_result.method_name)}: "
-        f"f(x*) ≈ {best_result.f_star:.6g}, "
-        f"||∇f(x*)|| ≈ {best_result.grad_norm:.6g}.",
+        "В таблицах показаны первые и последние итерации. "
+        "Полные таблицы сохраняются в outputs/tables.",
     )
+
+    for result in function_results:
+        add_heading(document, get_method_full_ru_name(result.method_name), level=3)
+        add_paragraph(
+            document,
+            f"Функция: {function_name}     Метод: "
+            f"{get_method_full_ru_name(result.method_name)}     "
+            f"x⁰ = {format_array(function.default_x0)}",
+        )
+        history_dataframe = prepare_history_dataframe(result)
+        add_dataframe_table(document, history_dataframe, font_size=8)
+
+        add_paragraph(
+            document,
+            f"Результат: x* ≈ {format_array(result.x_star)}, "
+            f"f(x*) ≈ {format_value(result.f_star)}, "
+            f"||∇f(x*)|| = {format_value(result.grad_norm)}. "
+            f"Число итераций: {result.iterations}.",
+        )
+
+    best_result = min(function_results, key=lambda item: item.f_star)
+
+    add_paragraph(
+        document,
+        f"Вывод: наименьшее значение функции получено методом "
+        f"{get_method_full_ru_name(best_result.method_name)}: "
+        f"f(x*) ≈ {format_value(best_result.f_star)}, "
+        f"||∇f(x*)|| ≈ {format_value(best_result.grad_norm)}.",
+    )
+
+    document.add_page_break()
 
 
 def add_polynomial_section(
@@ -479,20 +642,21 @@ def add_polynomial_section(
     function_results: list[OptimizationResult],
     epsilon: float,
 ) -> None:
+    """Раздел результата для полинома 10D по шаблону презентации."""
+
     function_name = get_function_ru_name(function.name)
 
-    add_heading(document, f"5. Результаты для {function_name}", level=1)
+    add_heading(document, f"Результат для полинома 10D: {function_name}", level=1)
 
     add_paragraph(
         document,
-        f"Начальная точка: x⁰ = {format_array(function.default_x0)}.",
+        f"Полином: вариант 3     x⁰ = {format_array(function.default_x0)}",
     )
 
-    add_heading(document, "5.1. Сводная таблица результатов", level=2)
-    function_summary = prepare_function_summary_dataframe(function_results)
-    add_dataframe_table(document, function_summary)
+    function_summary = prepare_polynomial_result_template_dataframe(function_results)
+    add_dataframe_table(document, function_summary, font_size=9)
 
-    add_heading(document, "5.2. Найденные точки x*", level=2)
+    add_heading(document, "Полные найденные векторы x*", level=2)
 
     rows = []
     for result in function_results:
@@ -500,14 +664,12 @@ def add_polynomial_section(
             {
                 "Метод": get_method_ru_name(result.method_name),
                 "x*": format_array(result.x_star),
-                "f(x*)": result.f_star,
-                "||∇f(x*)||": result.grad_norm,
             }
         )
 
-    add_dataframe_table(document, pd.DataFrame(rows))
+    add_dataframe_table(document, pd.DataFrame(rows), font_size=8)
 
-    add_heading(document, "5.3. График сходимости", level=2)
+    add_heading(document, "График сходимости", level=2)
     convergence_path = plot_gradient_norm_convergence(
         function=function,
         results=function_results,
@@ -515,11 +677,11 @@ def add_polynomial_section(
     )
     add_image_if_exists(document, convergence_path)
 
-    add_heading(document, "5.4. График убывания значения функции", level=2)
+    add_heading(document, "График убывания значения функции", level=2)
     decrease_path = plot_function_decrease(function, function_results)
     add_image_if_exists(document, decrease_path)
 
-    add_heading(document, "5.5. 2D-сечение полинома", level=2)
+    add_heading(document, "2D-сечение полинома", level=2)
     section_path = plot_polynomial_2d_section(
         function=function,
         results=function_results,
@@ -528,39 +690,59 @@ def add_polynomial_section(
     )
     add_image_if_exists(document, section_path)
 
-    add_heading(document, "5.6. Таблицы итераций", level=2)
-
-    for result in function_results:
-        add_heading(document, get_method_ru_name(result.method_name), level=3)
-        history_dataframe = prepare_history_dataframe(result)
-        add_dataframe_table(document, history_dataframe)
-
-    add_heading(document, "5.7. Вывод", level=2)
-    best_result = min(function_results, key=lambda item: item.f_star)
+    add_heading(document, "Таблицы итераций методов", level=2)
     add_paragraph(
         document,
-        f"Лучшее значение для полинома получено методом "
-        f"{get_method_ru_name(best_result.method_name)}: "
-        f"f(x*) ≈ {best_result.f_star:.6g}, "
-        f"||∇f(x*)|| ≈ {best_result.grad_norm:.6g}.",
+        "В таблицах показаны первые и последние итерации. "
+        "Полные таблицы сохраняются в outputs/tables.",
     )
+
+    for result in function_results:
+        add_heading(document, get_method_full_ru_name(result.method_name), level=3)
+        history_dataframe = prepare_history_dataframe(result)
+        add_dataframe_table(document, history_dataframe, font_size=8)
+
+        add_paragraph(
+            document,
+            f"Результат: x* = {format_array(result.x_star)}, "
+            f"f(x*) ≈ {format_value(result.f_star)}, "
+            f"||∇f(x*)|| = {format_value(result.grad_norm)}. "
+            f"Число итераций: {result.iterations}.",
+        )
+
+    best_result = min(function_results, key=lambda item: item.f_star)
+
+    add_paragraph(
+        document,
+        f"Вывод: лучшее значение для полинома получено методом "
+        f"{get_method_full_ru_name(best_result.method_name)}: "
+        f"f(x*) ≈ {format_value(best_result.f_star)}, "
+        f"||∇f(x*)|| ≈ {format_value(best_result.grad_norm)}.",
+    )
+
+    document.add_page_break()
 
 
 def add_global_summary(
     document: Document,
+    functions: list[ObjectiveFunction],
     results: list[OptimizationResult],
 ) -> None:
-    add_heading(document, "6. Сводная таблица сравнения", level=1)
+    """Общая сводная таблица сравнения."""
 
-    summary_dataframe = prepare_summary_dataframe(results)
-    add_dataframe_table(document, summary_dataframe)
+    add_heading(document, "Сводная таблица сравнения", level=1)
+
+    summary_dataframe = prepare_global_summary_dataframe(functions, results)
+    add_dataframe_table(document, summary_dataframe, font_size=8)
 
 
 def add_final_conclusion(
     document: Document,
     results: list[OptimizationResult],
 ) -> None:
-    add_heading(document, "7. Общий вывод", level=1)
+    """Общий вывод."""
+
+    add_heading(document, "Общий вывод", level=1)
 
     add_paragraph(
         document,
@@ -599,6 +781,8 @@ def add_final_conclusion(
 
 
 def configure_document_styles(document: Document) -> None:
+    """Базовые стили документа."""
+
     styles = document.styles
 
     normal_style = styles["Normal"]
@@ -620,14 +804,13 @@ def generate_docx_report(
     """
     Создание DOCX-отчёта по результатам лабораторной работы.
 
-    Отчёт содержит:
-    - постановку задачи;
-    - описание варианта;
-    - описание методов;
-    - таблицы результатов;
-    - графики;
-    - таблицы итераций;
-    - общий вывод.
+    Отчёт строится по структуре шаблонов презентации:
+    - результат для каждой 2D-функции;
+    - таблица итераций методов;
+    - результат для полинома 10D;
+    - таблица итераций 10D;
+    - сводная таблица сравнения;
+    - графики сходимости и убывания.
     """
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -664,7 +847,7 @@ def generate_docx_report(
                 epsilon=epsilon,
             )
 
-    add_global_summary(document, results)
+    add_global_summary(document, functions, results)
     add_final_conclusion(document, results)
 
     document.save(output_path)
